@@ -84,7 +84,7 @@
   --chart-1: var(--primary);
   --chart-2: var(--secondary);
   --chart-3: oklch(0.72 0.16 210);
-  --chart-4: oklch(0.78 0.11 140);
+  --chart-4: oklch(0.60 0.15 145);
   --chart-5: oklch(0.68 0.18 60);
 
   --radius: 0.75rem;
@@ -137,7 +137,7 @@
   --chart-1: var(--primary);
   --chart-2: var(--secondary);
   --chart-3: oklch(0.74 0.16 210);
-  --chart-4: oklch(0.78 0.11 140);
+  --chart-4: oklch(0.65 0.15 145);
   --chart-5: oklch(0.72 0.18 60);
 
   --sidebar: oklch(0.18 0.01 250);

@@ -15,11 +15,7 @@ export default async function AppLayout({
     <SidebarProvider>
       <AppSidebar role={user.role} />
       <SidebarInset className="border-[0.25px] overflow-x-hidden border-neutral-400/20">
-        <TopBar
-          name={user.name ?? "User"}
-          email={user.email ?? ""}
-          role={user.role}
-        />
+        <TopBar />
         <main className="flex flex-1 flex-col px-4 py-8 sm:px-6">{children}</main>
       </SidebarInset>
     </SidebarProvider>

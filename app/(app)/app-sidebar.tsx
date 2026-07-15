@@ -3,7 +3,7 @@
 import Image from "next/image"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
-import { LayoutDashboard, Users } from "lucide-react"
+import { BarChart3, LayoutDashboard, UploadCloud, Users, Users2 } from "lucide-react"
 
 import {
   Sidebar,
@@ -25,6 +25,24 @@ const navItems = [
     label: "Dashboard",
     icon: LayoutDashboard,
     roles: ["super_admin", "admin"],
+  },
+  {
+    href: "/analytics",
+    label: "Analytics",
+    icon: BarChart3,
+    roles: ["super_admin", "admin", "vendor"],
+  },
+  {
+    href: "/uploads",
+    label: "Uploads",
+    icon: UploadCloud,
+    roles: ["super_admin"],
+  },
+  {
+    href: "/vendors",
+    label: "Vendors",
+    icon: Users2,
+    roles: ["super_admin"],
   },
   {
     href: "/admins",

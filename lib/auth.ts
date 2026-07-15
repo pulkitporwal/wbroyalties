@@ -33,6 +33,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
             name: "Super Admin",
             email: normalizedEmail,
             role: "super_admin",
+            mustChangePassword: false,
           }
         }
 
@@ -52,7 +53,9 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           id: admin._id.toString(),
           name: admin.name,
           email: admin.email,
-          role: "admin",
+          role: admin.role ?? "admin",
+          vendorName: admin.vendorName ?? undefined,
+          mustChangePassword: admin.mustChangePassword ?? false,
         }
       },
     }),
@@ -62,12 +65,16 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       if (user?.id) {
         token.id = user.id
         token.role = user.role
+        token.vendorName = user.vendorName
+        token.mustChangePassword = user.mustChangePassword
       }
       return token
     },
     session({ session, token }) {
       session.user.id = token.id
       session.user.role = token.role
+      session.user.vendorName = token.vendorName
+      session.user.mustChangePassword = token.mustChangePassword
       return session
     },
   },

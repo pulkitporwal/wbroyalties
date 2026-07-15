@@ -16,6 +16,20 @@ const AdminSchema = new Schema(
       enum: ["active", "suspended"],
       default: "active",
     },
+    role: {
+      type: String,
+      enum: ["admin", "vendor"],
+      default: "admin",
+    },
+    vendorName: {
+      type: String,
+      trim: true,
+      unique: true,
+      sparse: true,
+    },
+    ottCommissionPercent: { type: Number, default: 25, min: 0, max: 100 },
+    ytCommissionPercent: { type: Number, default: 25, min: 0, max: 100 },
+    mustChangePassword: { type: Boolean, default: false },
   },
   { timestamps: true }
 )

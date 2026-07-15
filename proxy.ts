@@ -2,11 +2,14 @@ import { NextResponse } from "next/server"
 
 import { auth } from "@/lib/auth"
 
+const superAdminOnlyPrefixes = ["/admins", "/uploads", "/vendors"]
+
 export default auth((req) => {
   const { pathname } = req.nextUrl
   const session = req.auth
 
   const isLoginRoute = pathname === "/login"
+  const isChangePasswordRoute = pathname === "/change-password"
 
   if (!session && !isLoginRoute) {
     return NextResponse.redirect(new URL("/login", req.nextUrl))
@@ -16,9 +19,14 @@ export default auth((req) => {
     return NextResponse.redirect(new URL("/dashboard", req.nextUrl))
   }
 
+  if (session?.user.mustChangePassword && !isChangePasswordRoute) {
+    return NextResponse.redirect(new URL("/change-password", req.nextUrl))
+  }
+
   if (
     session &&
-    pathname.startsWith("/admins") &&
+    !session.user.mustChangePassword &&
+    superAdminOnlyPrefixes.some((prefix) => pathname.startsWith(prefix)) &&
     session.user.role !== "super_admin"
   ) {
     return NextResponse.redirect(new URL("/dashboard", req.nextUrl))
@@ -28,5 +36,7 @@ export default auth((req) => {
 })
 
 export const config = {
-  matcher: ["/((?!api/auth|_next/static|_next/image|favicon.ico|logo.webp).*)"],
+  matcher: [
+    "/((?!api/auth|api/uploads|_next/static|_next/image|favicon.ico|logo.webp).*)",
+  ],
 }

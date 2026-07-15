@@ -1,13 +1,13 @@
 "use client"
 
 import { usePathname } from "next/navigation"
+import { LogOut } from "lucide-react"
 
-import { Separator } from "@/components/ui/separator"
+import { Button } from "@/components/ui/button"
 import { SidebarTrigger } from "@/components/ui/sidebar"
-import type { UserRole } from "@/types/next-auth"
 
+import { logout } from "./actions"
 import { ThemeToggle } from "./theme-toggle"
-import { UserMenu } from "./user-menu"
 
 const titles: Record<string, string> = {
   "/dashboard": "Dashboard",
@@ -21,15 +21,7 @@ function pageTitle(pathname: string) {
   return match ? titles[match] : "WB Royalties"
 }
 
-export function TopBar({
-  name,
-  email,
-  role,
-}: {
-  name: string
-  email: string
-  role: UserRole
-}) {
+export function TopBar() {
   const pathname = usePathname()
 
   return (
@@ -38,7 +30,14 @@ export function TopBar({
       <h1 className="font-heading text-sm font-medium">{pageTitle(pathname)}</h1>
       <div className="ml-auto flex items-center gap-4">
         <ThemeToggle />
-        <UserMenu name={name} email={email} role={role} />
+        <Button
+          variant="ghost"
+          size="icon"
+          aria-label="Sign out"
+          onClick={() => void logout()}
+        >
+          <LogOut />
+        </Button>
       </div>
     </header>
   )
