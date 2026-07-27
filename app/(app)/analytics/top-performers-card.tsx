@@ -11,7 +11,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { formatCurrency, formatNumber } from "@/lib/format"
 import type { RankedRow } from "@/lib/royalty-analytics"
 
-function RankedList({ rows, totalGrossRevenue }: { rows: RankedRow[]; totalGrossRevenue: number }) {
+export function RankedList({ rows, totalGrossRevenue }: { rows: RankedRow[]; totalGrossRevenue: number }) {
   const maxRevenue = Math.max(1, ...rows.map((row) => row.grossRevenue))
 
   if (rows.length === 0) {
@@ -73,13 +73,16 @@ export function TopPerformersCard({
         <CardDescription>The Pareto view — who and what drives the revenue.</CardDescription>
       </CardHeader>
       <CardContent>
-        <Tabs defaultValue="tracks">
+        <Tabs defaultValue="labels">
           <TabsList>
+            <TabsTrigger value="labels">Labels</TabsTrigger>
             <TabsTrigger value="tracks">Tracks</TabsTrigger>
             <TabsTrigger value="artists">Artists</TabsTrigger>
             {topVendors.length > 0 && <TabsTrigger value="vendors">Vendors</TabsTrigger>}
-            <TabsTrigger value="labels">Labels</TabsTrigger>
           </TabsList>
+          <TabsContent value="labels" className="pt-4">
+            <RankedList rows={topLabels} totalGrossRevenue={totalGrossRevenue} />
+          </TabsContent>
           <TabsContent value="tracks" className="pt-4">
             <RankedList rows={topTracks} totalGrossRevenue={totalGrossRevenue} />
           </TabsContent>
@@ -91,9 +94,6 @@ export function TopPerformersCard({
               <RankedList rows={topVendors} totalGrossRevenue={totalGrossRevenue} />
             </TabsContent>
           )}
-          <TabsContent value="labels" className="pt-4">
-            <RankedList rows={topLabels} totalGrossRevenue={totalGrossRevenue} />
-          </TabsContent>
         </Tabs>
       </CardContent>
     </Card>

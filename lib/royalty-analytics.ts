@@ -11,6 +11,7 @@ export type AnalyticsFilters = {
   revDsp?: string
   country?: string
   revenueType?: string
+  label?: string
   isrc?: string
   q?: string
 }
@@ -77,6 +78,7 @@ export type AnalyticsResult = {
     topPlatform: (RankedRow & { share: number }) | null
     topCountry: (RankedRow & { share: number }) | null
     topTrack: (RankedRow & { share: number }) | null
+    topLabel: (RankedRow & { share: number }) | null
   }
 }
 
@@ -104,6 +106,9 @@ function buildMatchStage(filters: AnalyticsFilters) {
   }
   if (filters.revenueType) {
     match.customerRevenueType = filters.revenueType
+  }
+  if (filters.label) {
+    match.labelName = filters.label
   }
   if (filters.isrc) {
     match.isrc = filters.isrc
@@ -377,6 +382,7 @@ export async function getAnalytics(filters: AnalyticsFilters): Promise<Analytics
   const topPlatformRaw = rawPlatformSplit[0]
   const topCountryRaw = rawTopCountries[0]
   const topTrackRaw: RawGroupRow | undefined = result?.topTracks?.[0]
+  const topLabelRaw: RawGroupRow | undefined = result?.topLabels?.[0]
 
   return {
     summary,
@@ -435,6 +441,14 @@ export async function getAnalytics(filters: AnalyticsFilters): Promise<Analytics
             share: (topTrackRaw.grossRevenue / totalRevenueOrOne) * 100,
           }
         : null,
+      topLabel: topLabelRaw
+        ? {
+            label: topLabelRaw._id ?? "Unknown",
+            grossRevenue: topLabelRaw.grossRevenue,
+            units: topLabelRaw.units,
+            share: (topLabelRaw.grossRevenue / totalRevenueOrOne) * 100,
+          }
+        : null,
     },
   }
 }
@@ -444,14 +458,16 @@ export type FilterOptions = {
   revDspOptions: string[]
   countryOptions: string[]
   revenueTypeOptions: string[]
+  labelOptions: string[]
 }
 
 export async function getFilterOptions(): Promise<FilterOptions> {
-  const [vendors, revDspOptions, countryOptions, revenueTypeOptions] = await Promise.all([
+  const [vendors, revDspOptions, countryOptions, revenueTypeOptions, labelOptions] = await Promise.all([
     Admin.find({ role: "vendor" }).sort({ vendorName: 1 }).select({ vendorName: 1 }).lean(),
     RoyaltyRecord.distinct("revDsp"),
     RoyaltyRecord.distinct("country"),
     RoyaltyRecord.distinct("customerRevenueType"),
+    RoyaltyRecord.distinct("labelName"),
   ])
 
   return {
@@ -461,5 +477,6 @@ export async function getFilterOptions(): Promise<FilterOptions> {
     revenueTypeOptions: (revenueTypeOptions as (string | null)[])
       .filter((v): v is string => Boolean(v))
       .sort(),
+    labelOptions: (labelOptions as (string | null)[]).filter((v): v is string => Boolean(v)).sort(),
   }
 }

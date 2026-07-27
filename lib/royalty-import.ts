@@ -185,12 +185,18 @@ function toRow(headerMap: HeaderMap, values: ExcelJS.CellValue[]): ParsedRoyalty
   }
 }
 
-/** Pass 1: cheap scan collecting the distinct set of vendor names in the file. */
-export async function collectVendorNames(buffer: Buffer): Promise<Set<string>> {
+export type VendorScanResult = { vendorNames: Set<string>; totalRowCount: number }
+
+/** Pass 1: cheap scan collecting the distinct set of vendor names in the file, and a total row count for progress reporting. */
+export async function collectVendorNames(buffer: Buffer): Promise<VendorScanResult> {
   const reader = createReader(buffer)
   let headerMap: HeaderMap | null = null
-  const vendors = new Set<string>()
+  const vendorNames = new Set<string>()
+  let totalRowCount = 0
 
+  // Only the first worksheet is treated as data; extra sheets (notes, pivots,
+  // summaries) are common in real exports and shouldn't be required to match
+  // the expected columns.
   for await (const worksheetReader of reader) {
     for await (const row of worksheetReader) {
       const values = row.values as ExcelJS.CellValue[]
@@ -199,24 +205,28 @@ export async function collectVendorNames(buffer: Buffer): Promise<Set<string>> {
         continue
       }
       if (!headerMap) continue
+      totalRowCount += 1
       const vendorName = cellText(values[headerMap.vendorName])
-      if (vendorName) vendors.add(vendorName)
+      if (vendorName) vendorNames.add(vendorName)
     }
+    break
   }
 
   if (!headerMap) {
     throw new Error("The uploaded file has no header row.")
   }
 
-  return vendors
+  return { vendorNames, totalRowCount }
 }
 
 export type StreamResult = { rowCount: number; skippedRowCount: number }
+export type StreamProgress = { processedRowCount: number; skippedRowCount: number }
 
 /** Pass 2: re-streams every row, invoking onBatch with chunks of parsed rows. */
 export async function streamRoyaltyRows(
   buffer: Buffer,
   onBatch: (rows: ParsedRoyaltyRow[]) => Promise<void>,
+  onProgress?: (progress: StreamProgress) => void,
   batchSize = 1000
 ): Promise<StreamResult> {
   const reader = createReader(buffer)
@@ -225,6 +235,7 @@ export async function streamRoyaltyRows(
   let total = 0
   let skipped = 0
 
+  // Only the first worksheet is treated as data; see note in collectVendorNames.
   for await (const worksheetReader of reader) {
     for await (const row of worksheetReader) {
       const values = row.values as ExcelJS.CellValue[]
@@ -246,8 +257,10 @@ export async function streamRoyaltyRows(
       if (batch.length >= batchSize) {
         await onBatch(batch)
         batch = []
+        onProgress?.({ processedRowCount: total, skippedRowCount: skipped })
       }
     }
+    break
   }
 
   if (!headerMap) {
@@ -257,6 +270,7 @@ export async function streamRoyaltyRows(
   if (batch.length > 0) {
     await onBatch(batch)
   }
+  onProgress?.({ processedRowCount: total, skippedRowCount: skipped })
 
   return { rowCount: total, skippedRowCount: skipped }
 }

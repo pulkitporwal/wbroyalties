@@ -55,6 +55,7 @@ export default async function AnalyticsPage({
     revDsp: first(params.revDsp),
     country: first(params.country),
     revenueType: first(params.revenueType),
+    label: first(params.label),
     isrc: first(params.isrc),
     q: first(params.q),
   }
@@ -81,12 +82,17 @@ export default async function AnalyticsPage({
         lockedVendorName={isVendor ? lockedVendorName : undefined}
       />
 
-      <KpiCards summary={analytics.summary} showVendorCount={!isVendor} />
+      <KpiCards
+        summary={analytics.summary}
+        showVendorCount={!isVendor}
+        showGrossRevenue={!isVendor}
+      />
 
       <HighlightCards
         topPlatform={analytics.highlights.topPlatform}
         topCountry={analytics.highlights.topCountry}
         topTrack={analytics.highlights.topTrack}
+        topLabel={analytics.highlights.topLabel}
       />
 
       {/* Anchor: revenue trend over time */}

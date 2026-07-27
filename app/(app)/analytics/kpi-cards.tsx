@@ -11,6 +11,7 @@ import { formatCurrency, formatNumber } from "@/lib/format"
 export function KpiCards({
   summary,
   showVendorCount = true,
+  showGrossRevenue = true,
 }: {
   summary: {
     totalGrossRevenue: number
@@ -22,13 +23,18 @@ export function KpiCards({
     revenuePerStream: number
   }
   showVendorCount?: boolean
+  showGrossRevenue?: boolean
 }) {
   const stats = [
-    {
-      label: "Gross revenue",
-      value: formatCurrency(summary.totalGrossRevenue),
-      icon: IndianRupee,
-    },
+    ...(showGrossRevenue
+      ? [
+          {
+            label: "Gross revenue",
+            value: formatCurrency(summary.totalGrossRevenue),
+            icon: IndianRupee,
+          },
+        ]
+      : []),
     {
       label: "Vendor payout",
       value: formatCurrency(summary.totalPayout),

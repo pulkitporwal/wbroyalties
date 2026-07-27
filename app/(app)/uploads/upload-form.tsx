@@ -38,6 +38,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
+import { Progress, ProgressLabel, ProgressValue } from "@/components/ui/progress"
 
 import type { BatchRow } from "./batch-history-table"
 
@@ -45,6 +46,25 @@ type NewVendorCredential = {
   vendorName: string
   email: string
   tempPassword: string
+}
+
+type UploadEvent =
+  | { type: "total"; totalRowCount: number }
+  | { type: "progress"; processedRowCount: number; failedRowCount: number; totalRowCount: number }
+  | {
+      type: "done"
+      batchId: string
+      rowCount: number
+      skippedRowCount: number
+      failedRowCount: number
+      newVendors: NewVendorCredential[]
+    }
+  | { type: "error"; error: string }
+
+type ImportProgress = {
+  totalRowCount: number
+  processedRowCount: number
+  failedRowCount: number
 }
 
 export function UploadForm({ batches }: { batches: BatchRow[] }) {
@@ -56,10 +76,13 @@ export function UploadForm({ batches }: { batches: BatchRow[] }) {
   const [newVendors, setNewVendors] = useState<NewVendorCredential[] | null>(null)
   const [rowCount, setRowCount] = useState<number | null>(null)
   const [skippedRowCount, setSkippedRowCount] = useState<number>(0)
+  const [progress, setProgress] = useState<ImportProgress | null>(null)
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
     setError(null)
+    setRowCount(null)
+    setProgress(null)
 
     const file = fileInputRef.current?.files?.[0]
     if (!file) {
@@ -71,30 +94,93 @@ export function UploadForm({ batches }: { batches: BatchRow[] }) {
     formData.set("file", file)
     if (replaceBatchId) formData.set("replaceBatchId", replaceBatchId)
 
+    const controller = new AbortController()
+    const timeout = setTimeout(() => controller.abort(), 5 * 60 * 1000)
+
     setUploading(true)
     try {
       const response = await fetch("/api/uploads", {
         method: "POST",
         body: formData,
+        signal: controller.signal,
       })
-      const data = await response.json()
 
-      if (!response.ok) {
-        setError(data.error ?? "Import failed.")
+      const contentType = response.headers.get("content-type") ?? ""
+      if (!contentType.includes("application/x-ndjson") && !contentType.includes("application/json")) {
+        const text = await response.text()
+        setError(
+          text.trim()
+            ? `Upload failed: ${text.slice(0, 300)}`
+            : `Upload failed with status ${response.status}.`
+        )
         return
       }
 
-      setRowCount(data.rowCount)
-      setSkippedRowCount(data.skippedRowCount ?? 0)
-      if (data.newVendors?.length > 0) {
-        setNewVendors(data.newVendors)
+      if (!response.body) {
+        setError("Upload failed: no response from server.")
+        return
       }
-      if (fileInputRef.current) fileInputRef.current.value = ""
-      setReplaceBatchId("")
-      router.refresh()
-    } catch {
-      setError("Something went wrong while uploading. Please try again.")
+
+      const reader = response.body.getReader()
+      const decoder = new TextDecoder()
+      let buffer = ""
+      let finished = false
+
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+
+        buffer += decoder.decode(value, { stream: true })
+        const lines = buffer.split("\n")
+        buffer = lines.pop() ?? ""
+
+        for (const line of lines) {
+          if (!line.trim()) continue
+          const evt: UploadEvent = JSON.parse(line)
+
+          if (evt.type === "total") {
+            setProgress({ totalRowCount: evt.totalRowCount, processedRowCount: 0, failedRowCount: 0 })
+          } else if (evt.type === "progress") {
+            setProgress({
+              totalRowCount: evt.totalRowCount,
+              processedRowCount: evt.processedRowCount,
+              failedRowCount: evt.failedRowCount,
+            })
+          } else if (evt.type === "done") {
+            finished = true
+            setRowCount(evt.rowCount)
+            setSkippedRowCount(evt.skippedRowCount)
+            setProgress({
+              totalRowCount: evt.rowCount + evt.skippedRowCount,
+              processedRowCount: evt.rowCount + evt.skippedRowCount,
+              failedRowCount: evt.failedRowCount,
+            })
+            if (evt.newVendors.length > 0) {
+              setNewVendors(evt.newVendors)
+            }
+            if (fileInputRef.current) fileInputRef.current.value = ""
+            setReplaceBatchId("")
+            router.refresh()
+          } else if (evt.type === "error") {
+            finished = true
+            setError(evt.error)
+          }
+        }
+      }
+
+      if (!finished) {
+        setError("The connection closed before the import finished. Check the upload history below.")
+      }
+    } catch (err) {
+      if (err instanceof DOMException && err.name === "AbortError") {
+        setError(
+          "The upload timed out after 5 minutes. The file may be too large, or the connection was interrupted. Check the upload history below — it may have still completed."
+        )
+      } else {
+        setError("Something went wrong while uploading. Please check your connection and try again.")
+      }
     } finally {
+      clearTimeout(timeout)
       setUploading(false)
     }
   }
@@ -149,6 +235,36 @@ export function UploadForm({ batches }: { batches: BatchRow[] }) {
               </p>
             </div>
 
+            {progress && uploading && (
+              <div className="flex flex-col gap-2 rounded-md border border-input bg-input/10 p-3">
+                <Progress
+                  value={
+                    progress.totalRowCount > 0
+                      ? Math.min(
+                          100,
+                          Math.round((progress.processedRowCount / progress.totalRowCount) * 100)
+                        )
+                      : 0
+                  }
+                >
+                  <div className="flex items-center justify-between">
+                    <ProgressLabel>Importing rows...</ProgressLabel>
+                    <ProgressValue />
+                  </div>
+                </Progress>
+                <p className="text-xs text-muted-foreground">
+                  {progress.processedRowCount.toLocaleString()} of{" "}
+                  {progress.totalRowCount.toLocaleString()} rows processed
+                  {progress.failedRowCount > 0 && (
+                    <span className="text-destructive">
+                      {" "}
+                      &middot; {progress.failedRowCount.toLocaleString()} failed
+                    </span>
+                  )}
+                </p>
+              </div>
+            )}
+
             {error && (
               <Alert variant="destructive">
                 <AlertCircle />
@@ -163,9 +279,12 @@ export function UploadForm({ batches }: { batches: BatchRow[] }) {
                   {skippedRowCount > 0 && (
                     <>
                       {" "}
-                      Skipped {skippedRowCount.toLocaleString()} row
-                      {skippedRowCount === 1 ? "" : "s"} with no resolvable
-                      vendor name (e.g. formula errors in the source file).
+                      <span className="text-destructive">
+                        Failed to import {skippedRowCount.toLocaleString()} row
+                        {skippedRowCount === 1 ? "" : "s"}
+                      </span>{" "}
+                      — either no resolvable vendor name (e.g. formula errors
+                      in the source file) or a data error on that row.
                     </>
                   )}
                 </AlertDescription>

@@ -1,4 +1,4 @@
-import { Disc3, Globe2, Radio } from "lucide-react"
+import { Disc3, Globe2, Radio, Tag } from "lucide-react"
 import type { LucideIcon } from "lucide-react"
 
 import {
@@ -52,13 +52,16 @@ export function HighlightCards({
   topPlatform,
   topCountry,
   topTrack,
+  topLabel,
 }: {
   topPlatform: Highlight
   topCountry: Highlight
   topTrack: Highlight
+  topLabel?: Highlight
 }) {
   return (
-    <div className="grid gap-4 sm:grid-cols-3">
+    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <HighlightCard label="Top label" icon={Tag} highlight={topLabel ?? null} />
       <HighlightCard label="Top platform" icon={Radio} highlight={topPlatform} />
       <HighlightCard label="Top country" icon={Globe2} highlight={topCountry} />
       <HighlightCard label="Top track" icon={Disc3} highlight={topTrack} />

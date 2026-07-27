@@ -53,6 +53,7 @@ export function FilterBar({
   const [revDsp, setRevDsp] = useState(current.revDsp ?? "")
   const [country, setCountry] = useState(current.country ?? "")
   const [revenueType, setRevenueType] = useState(current.revenueType ?? "")
+  const [label, setLabel] = useState(current.label ?? "")
   const [isrc, setIsrc] = useState(current.isrc ?? "")
   const [q, setQ] = useState(current.q ?? "")
 
@@ -65,6 +66,7 @@ export function FilterBar({
       revDsp,
       country,
       revenueType,
+      label,
       isrc,
       q,
       ...overrides,
@@ -86,6 +88,7 @@ export function FilterBar({
     setRevDsp("")
     setCountry("")
     setRevenueType("")
+    setLabel("")
     setIsrc("")
     setQ("")
     router.push(pathname)
@@ -243,6 +246,32 @@ export function FilterBar({
                 {options.revenueTypeOptions.map((type) => (
                   <SelectItem key={type} value={type}>
                     {type}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        )}
+
+        {options && options.labelOptions.length > 0 && (
+          <div className="flex flex-col gap-1.5">
+            <span className="text-xs text-muted-foreground">Label</span>
+            <Select
+              value={label || ALL}
+              onValueChange={(value) => {
+                const next = value === ALL ? "" : (value ?? "")
+                setLabel(next)
+                apply({ label: next })
+              }}
+            >
+              <SelectTrigger className="w-40">
+                <SelectValue placeholder="All labels" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={ALL}>All labels</SelectItem>
+                {options.labelOptions.map((l) => (
+                  <SelectItem key={l} value={l}>
+                    {l}
                   </SelectItem>
                 ))}
               </SelectContent>

@@ -1,6 +1,10 @@
 "use client"
 
+import { useState, useTransition } from "react"
+import { Download, MoreHorizontal } from "lucide-react"
+
 import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
 import {
   Table,
   TableBody,
@@ -16,6 +20,22 @@ import {
   CardDescription,
   CardContent,
 } from "@/components/ui/card"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
+
+import { deleteBatch } from "./actions"
 
 export type BatchRow = {
   id: string
@@ -36,6 +56,9 @@ const statusVariant: Record<BatchRow["status"], "secondary" | "outline" | "destr
 }
 
 export function BatchHistoryTable({ batches }: { batches: BatchRow[] }) {
+  const [deleting, setDeleting] = useState<BatchRow | null>(null)
+  const [isPending, startTransition] = useTransition()
+
   return (
     <Card>
       <CardHeader>
@@ -53,12 +76,13 @@ export function BatchHistoryTable({ batches }: { batches: BatchRow[] }) {
               <TableHead>New vendors</TableHead>
               <TableHead>Status</TableHead>
               <TableHead>Date</TableHead>
+              <TableHead className="text-right">Actions</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {batches.length === 0 && (
               <TableRow>
-                <TableCell colSpan={7} className="text-center text-muted-foreground">
+                <TableCell colSpan={8} className="text-center text-muted-foreground">
                   No uploads yet.
                 </TableCell>
               </TableRow>
@@ -95,11 +119,88 @@ export function BatchHistoryTable({ batches }: { batches: BatchRow[] }) {
                   )}
                 </TableCell>
                 <TableCell>{new Date(batch.createdAt).toLocaleString()}</TableCell>
+                <TableCell className="text-right">
+                  <DropdownMenu>
+                    <DropdownMenuTrigger
+                      render={
+                        <Button variant="ghost" size="icon-sm" aria-label="Actions">
+                          <MoreHorizontal />
+                        </Button>
+                      }
+                    />
+                    <DropdownMenuContent align="end">
+                      <DropdownMenuItem
+                        render={
+                          <a
+                            href={`/api/uploads/${batch.id}/download`}
+                            download
+                          />
+                        }
+                      >
+                        <Download data-icon="inline-start" />
+                        Download Excel
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        variant="destructive"
+                        onClick={() => setDeleting(batch)}
+                      >
+                        Delete all data
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </TableCell>
               </TableRow>
             ))}
           </TableBody>
         </Table>
       </CardContent>
+
+      <DeleteBatchDialog
+        batch={deleting}
+        onOpenChange={() => setDeleting(null)}
+        pending={isPending}
+        onConfirm={(id) =>
+          startTransition(() => {
+            void deleteBatch(id).then(() => setDeleting(null))
+          })
+        }
+      />
     </Card>
+  )
+}
+
+function DeleteBatchDialog({
+  batch,
+  onOpenChange,
+  onConfirm,
+  pending,
+}: {
+  batch: BatchRow | null
+  onOpenChange: () => void
+  onConfirm: (id: string) => void
+  pending: boolean
+}) {
+  return (
+    <Dialog open={batch !== null} onOpenChange={onOpenChange}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Delete all data for this upload</DialogTitle>
+          <DialogDescription>
+            This permanently deletes every royalty row imported from
+            &ldquo;{batch?.fileName}&rdquo; ({batch?.rowCount.toLocaleString()} rows) along
+            with the upload record itself. This cannot be undone.
+          </DialogDescription>
+        </DialogHeader>
+        <DialogFooter showCloseButton>
+          <Button
+            variant="destructive"
+            disabled={pending}
+            onClick={() => batch && onConfirm(batch.id)}
+          >
+            {pending ? "Deleting..." : "Delete all data"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   )
 }
