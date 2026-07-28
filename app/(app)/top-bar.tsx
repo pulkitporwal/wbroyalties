@@ -11,6 +11,7 @@ import { ThemeToggle } from "./theme-toggle"
 
 const titles: Record<string, string> = {
   "/dashboard": "Dashboard",
+  "/reports": "Reports",
   "/admins": "Admins",
   "/profile": "Profile",
   "/settings": "Settings",

@@ -11,7 +11,7 @@ import { formatCurrency, formatNumber } from "@/lib/format"
 export function KpiCards({
   summary,
   showVendorCount = true,
-  showGrossRevenue = true,
+  showGrossRevenue = false,
 }: {
   summary: {
     totalGrossRevenue: number

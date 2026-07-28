@@ -3,7 +3,15 @@
 import Image from "next/image"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
-import { BarChart3, Disc3, LayoutDashboard, UploadCloud, Users, Users2 } from "lucide-react"
+import {
+  BarChart3,
+  Disc3,
+  Download,
+  LayoutDashboard,
+  UploadCloud,
+  Users,
+  Users2,
+} from "lucide-react"
 
 import {
   Sidebar,
@@ -36,6 +44,12 @@ const navItems = [
     href: "/isrcs",
     label: "ISRCs",
     icon: Disc3,
+    roles: ["super_admin", "admin", "vendor"],
+  },
+  {
+    href: "/reports",
+    label: "Reports",
+    icon: Download,
     roles: ["super_admin", "admin", "vendor"],
   },
   {

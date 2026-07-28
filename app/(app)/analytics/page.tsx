@@ -85,7 +85,7 @@ export default async function AnalyticsPage({
       <KpiCards
         summary={analytics.summary}
         showVendorCount={!isVendor}
-        showGrossRevenue={!isVendor}
+        // showGrossRevenue={!isVendor}
       />
 
       <HighlightCards
