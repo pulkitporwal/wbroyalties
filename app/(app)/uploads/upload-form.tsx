@@ -2,6 +2,7 @@
 
 import { useRef, useState } from "react"
 import { useRouter } from "next/navigation"
+import { upload } from "@vercel/blob/client"
 import { AlertCircle, Copy, UploadCloud } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
@@ -77,12 +78,14 @@ export function UploadForm({ batches }: { batches: BatchRow[] }) {
   const [rowCount, setRowCount] = useState<number | null>(null)
   const [skippedRowCount, setSkippedRowCount] = useState<number>(0)
   const [progress, setProgress] = useState<ImportProgress | null>(null)
+  const [uploadPercent, setUploadPercent] = useState<number | null>(null)
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
     setError(null)
     setRowCount(null)
     setProgress(null)
+    setUploadPercent(null)
 
     const file = fileInputRef.current?.files?.[0]
     if (!file) {
@@ -90,18 +93,28 @@ export function UploadForm({ batches }: { batches: BatchRow[] }) {
       return
     }
 
-    const formData = new FormData()
-    formData.set("file", file)
-    if (replaceBatchId) formData.set("replaceBatchId", replaceBatchId)
-
     const controller = new AbortController()
-    const timeout = setTimeout(() => controller.abort(), 5 * 60 * 1000)
+    const timeout = setTimeout(() => controller.abort(), 15 * 60 * 1000)
 
     setUploading(true)
     try {
+      const blob = await upload(file.name, file, {
+        access: "public",
+        handleUploadUrl: "/api/uploads/blob-token",
+        multipart: true,
+        abortSignal: controller.signal,
+        onUploadProgress: ({ percentage }) => setUploadPercent(percentage),
+      })
+      setUploadPercent(100)
+
       const response = await fetch("/api/uploads", {
         method: "POST",
-        body: formData,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          blobUrl: blob.url,
+          fileName: file.name,
+          replaceBatchId: replaceBatchId || undefined,
+        }),
         signal: controller.signal,
       })
 
@@ -174,7 +187,7 @@ export function UploadForm({ batches }: { batches: BatchRow[] }) {
     } catch (err) {
       if (err instanceof DOMException && err.name === "AbortError") {
         setError(
-          "The upload timed out after 5 minutes. The file may be too large, or the connection was interrupted. Check the upload history below — it may have still completed."
+          "The upload timed out after 15 minutes. The file may be too large, or the connection was interrupted. Check the upload history below — it may have still completed."
         )
       } else {
         setError("Something went wrong while uploading. Please check your connection and try again.")
@@ -234,6 +247,17 @@ export function UploadForm({ batches }: { batches: BatchRow[] }) {
                 file is imported, so revenue isn&rsquo;t double-counted.
               </p>
             </div>
+
+            {uploading && uploadPercent !== null && uploadPercent < 100 && !progress && (
+              <div className="flex flex-col gap-2 rounded-md border border-input bg-input/10 p-3">
+                <Progress value={Math.round(uploadPercent)}>
+                  <div className="flex items-center justify-between">
+                    <ProgressLabel>Uploading file...</ProgressLabel>
+                    <ProgressValue />
+                  </div>
+                </Progress>
+              </div>
+            )}
 
             {progress && uploading && (
               <div className="flex flex-col gap-2 rounded-md border border-input bg-input/10 p-3">

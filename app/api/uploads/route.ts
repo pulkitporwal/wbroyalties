@@ -1,4 +1,5 @@
 import mongoose from "mongoose"
+import { del } from "@vercel/blob"
 
 import { auth } from "@/lib/auth"
 import { connectToDatabase } from "@/lib/mongodb"
@@ -34,6 +35,7 @@ export async function POST(request: Request) {
       }
 
       let batchId: mongoose.Types.ObjectId | null = null
+      let blobUrlToDelete: string | null = null
 
       try {
         const session = await auth()
@@ -42,26 +44,21 @@ export async function POST(request: Request) {
           return
         }
 
-        let formData: FormData
+        let body: { blobUrl?: unknown; fileName?: unknown; replaceBatchId?: unknown }
         try {
-          formData = await request.formData()
+          body = await request.json()
         } catch {
-          send({
-            type: "error",
-            error:
-              "Couldn't read the uploaded file. It may be too large or the connection was interrupted.",
-          })
+          send({ type: "error", error: "Couldn't read the upload request." })
           return
         }
 
-        const file = formData.get("file")
-        const replaceBatchId = formData.get("replaceBatchId")
+        const { blobUrl, fileName, replaceBatchId } = body
 
-        if (!(file instanceof File)) {
+        if (typeof blobUrl !== "string" || !blobUrl) {
           send({ type: "error", error: "No file was uploaded." })
           return
         }
-        if (!file.name.toLowerCase().endsWith(".xlsx")) {
+        if (typeof fileName !== "string" || !fileName.toLowerCase().endsWith(".xlsx")) {
           send({ type: "error", error: "Only .xlsx files are supported." })
           return
         }
@@ -77,14 +74,21 @@ export async function POST(request: Request) {
         await connectToDatabase()
 
         const batch = await UploadBatch.create({
-          fileName: file.name,
+          fileName,
           uploadedById: session.user.id,
           uploadedByName: session.user.name ?? session.user.email ?? "Super Admin",
           status: "processing",
         })
         batchId = batch._id
 
-        const buffer = Buffer.from(await file.arrayBuffer())
+        blobUrlToDelete = blobUrl
+
+        const blobResponse = await fetch(blobUrl)
+        if (!blobResponse.ok) {
+          send({ type: "error", error: "Couldn't download the uploaded file." })
+          return
+        }
+        const buffer = Buffer.from(await blobResponse.arrayBuffer())
 
         const { vendorNames, totalRowCount } = await collectVendorNames(buffer)
         send({ type: "total", totalRowCount })
@@ -202,6 +206,11 @@ export async function POST(request: Request) {
         }
         send({ type: "error", error: errorMessage })
       } finally {
+        if (blobUrlToDelete) {
+          await del(blobUrlToDelete).catch((deleteError) => {
+            console.error("[uploads] failed to delete blob:", deleteError)
+          })
+        }
         controller.close()
       }
     },
