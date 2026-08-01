@@ -92,6 +92,7 @@ export async function POST(request: Request) {
 
         const { vendorNames, totalRowCount } = await collectVendorNames(buffer)
         send({ type: "total", totalRowCount })
+        await UploadBatch.findByIdAndUpdate(batch._id, { totalRowCount })
 
         const { vendorIdByName, newVendors } = await ensureVendorAccounts(vendorNames)
 
@@ -138,6 +139,9 @@ export async function POST(request: Request) {
               failedRowCount: skippedRowCount + insertFailedCount,
               totalRowCount,
             })
+            UploadBatch.findByIdAndUpdate(batch._id, { processedRowCount }).catch((updateError) => {
+              console.error("[uploads] failed to persist progress:", updateError)
+            })
           }
         )
 
@@ -183,6 +187,7 @@ export async function POST(request: Request) {
           rowCount: rowCount - insertFailedCount,
           skippedRowCount: failedRowCount,
           vendorsCreated: newVendors.length,
+          processedRowCount: totalRowCount,
         })
 
         send({

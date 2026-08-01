@@ -1,10 +1,12 @@
 "use client"
 
-import { useState, useTransition } from "react"
+import { useEffect, useState, useTransition } from "react"
+import { useRouter } from "next/navigation"
 import { Download, MoreHorizontal } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { Progress, ProgressValue } from "@/components/ui/progress"
 import {
   Table,
   TableBody,
@@ -44,9 +46,21 @@ export type BatchRow = {
   rowCount: number
   skippedRowCount: number
   vendorsCreated: number
+  totalRowCount: number
+  processedRowCount: number
   status: "processing" | "completed" | "failed"
   errorMessage?: string | null
   createdAt: string
+}
+
+type StatusResponse = {
+  status: BatchRow["status"]
+  rowCount: number
+  skippedRowCount: number
+  vendorsCreated: number
+  totalRowCount: number
+  processedRowCount: number
+  errorMessage: string | null
 }
 
 const statusVariant: Record<BatchRow["status"], "secondary" | "outline" | "destructive"> = {
@@ -56,8 +70,61 @@ const statusVariant: Record<BatchRow["status"], "secondary" | "outline" | "destr
 }
 
 export function BatchHistoryTable({ batches }: { batches: BatchRow[] }) {
+  const router = useRouter()
   const [deleting, setDeleting] = useState<BatchRow | null>(null)
   const [isPending, startTransition] = useTransition()
+  const [liveStatus, setLiveStatus] = useState<Record<string, StatusResponse>>({})
+
+  const processingIds = batches
+    .filter((batch) => (liveStatus[batch.id]?.status ?? batch.status) === "processing")
+    .map((batch) => batch.id)
+    .join(",")
+
+  useEffect(() => {
+    if (!processingIds) return
+
+    let cancelled = false
+
+    async function poll() {
+      const ids = processingIds.split(",")
+      const results = await Promise.all(
+        ids.map(async (id) => {
+          try {
+            const res = await fetch(`/api/uploads/${id}/status`, { cache: "no-store" })
+            if (!res.ok) return null
+            const data: StatusResponse = await res.json()
+            return [id, data] as const
+          } catch {
+            return null
+          }
+        })
+      )
+      if (cancelled) return
+
+      let anyFinished = false
+      setLiveStatus((prev) => {
+        const next = { ...prev }
+        for (const entry of results) {
+          if (!entry) continue
+          const [id, data] = entry
+          next[id] = data
+          if (data.status !== "processing") anyFinished = true
+        }
+        return next
+      })
+
+      if (anyFinished) router.refresh()
+    }
+
+    void poll()
+    const interval = setInterval(poll, 3000)
+    return () => {
+      cancelled = true
+      clearInterval(interval)
+    }
+  }, [processingIds, router])
+
+  const rows = batches.map((batch) => ({ ...batch, ...liveStatus[batch.id] }))
 
   return (
     <Card>
@@ -80,14 +147,14 @@ export function BatchHistoryTable({ batches }: { batches: BatchRow[] }) {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {batches.length === 0 && (
+            {rows.length === 0 && (
               <TableRow>
                 <TableCell colSpan={8} className="text-center text-muted-foreground">
                   No uploads yet.
                 </TableCell>
               </TableRow>
             )}
-            {batches.map((batch) => (
+            {rows.map((batch) => (
               <TableRow key={batch.id}>
                 <TableCell className="font-medium text-foreground">
                   {batch.fileName}
@@ -112,6 +179,28 @@ export function BatchHistoryTable({ batches }: { batches: BatchRow[] }) {
                         ? "Failed"
                         : "Processing"}
                   </Badge>
+                  {batch.status === "processing" && (
+                    <div className="mt-1.5 w-40">
+                      <Progress
+                        value={
+                          batch.totalRowCount > 0
+                            ? Math.min(
+                                100,
+                                Math.round((batch.processedRowCount / batch.totalRowCount) * 100)
+                              )
+                            : 0
+                        }
+                      >
+                        <ProgressValue className="text-[11px]" />
+                      </Progress>
+                      {batch.totalRowCount > 0 && (
+                        <p className="mt-0.5 text-[11px] text-muted-foreground">
+                          {batch.processedRowCount.toLocaleString()} /{" "}
+                          {batch.totalRowCount.toLocaleString()} rows
+                        </p>
+                      )}
+                    </div>
+                  )}
                   {batch.status === "failed" && batch.errorMessage && (
                     <p className="mt-1 max-w-xs text-xs text-destructive">
                       {batch.errorMessage}

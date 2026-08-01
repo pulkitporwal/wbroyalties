@@ -20,6 +20,8 @@ export default async function UploadsPage() {
     rowCount: batch.rowCount ?? 0,
     skippedRowCount: batch.skippedRowCount ?? 0,
     vendorsCreated: batch.vendorsCreated ?? 0,
+    totalRowCount: batch.totalRowCount ?? 0,
+    processedRowCount: batch.processedRowCount ?? 0,
     status: batch.status ?? "processing",
     errorMessage: batch.errorMessage,
     createdAt: batch.createdAt?.toISOString() ?? new Date().toISOString(),

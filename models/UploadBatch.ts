@@ -8,6 +8,8 @@ const UploadBatchSchema = new Schema(
     rowCount: { type: Number, default: 0 },
     skippedRowCount: { type: Number, default: 0 },
     vendorsCreated: { type: Number, default: 0 },
+    totalRowCount: { type: Number, default: 0 },
+    processedRowCount: { type: Number, default: 0 },
     status: {
       type: String,
       enum: ["processing", "completed", "failed"],
