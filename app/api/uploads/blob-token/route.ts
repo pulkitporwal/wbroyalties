@@ -20,8 +20,14 @@ export async function POST(request: Request) {
         }
 
         return {
+          // Windows browsers frequently report .xlsx files as
+          // "application/octet-stream" instead of the Excel-specific MIME
+          // type, so restricting to the exact type here rejects real
+          // uploads. The .xlsx extension check above is the real gate.
           allowedContentTypes: [
             "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            "application/octet-stream",
+            "application/zip",
           ],
           addRandomSuffix: true,
           maximumSizeInBytes: 100 * 1024 * 1024,

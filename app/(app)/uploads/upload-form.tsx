@@ -114,6 +114,10 @@ export function UploadForm({ batches }: { batches: BatchRow[] }) {
         access: "public",
         handleUploadUrl: "/api/uploads/blob-token",
         multipart: true,
+        // Some Windows browsers report no MIME type at all for .xlsx files
+        // (file.type is ""), which makes the blob API reject the upload.
+        // Force the correct content type instead of relying on detection.
+        contentType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         abortSignal: controller.signal,
         onUploadProgress: ({ percentage }) => setUploadPercent(percentage),
       })
@@ -375,7 +379,7 @@ function NewVendorsDialog({
 }) {
   return (
     <Dialog open={vendors !== null} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-xl">
+      <DialogContent className="flex max-h-[85vh] flex-col sm:max-w-xl">
         <DialogHeader>
           <DialogTitle>New vendor accounts created</DialogTitle>
           <DialogDescription>
@@ -384,6 +388,7 @@ function NewVendorsDialog({
             first sign in.
           </DialogDescription>
         </DialogHeader>
+        <div className="min-h-0 flex-1 overflow-y-auto rounded-md border border-border">
         <Table>
           <TableHeader>
             <TableRow>
@@ -418,6 +423,7 @@ function NewVendorsDialog({
             ))}
           </TableBody>
         </Table>
+        </div>
         <DialogFooter showCloseButton>
           <Button onClick={onOpenChange}>Done</Button>
         </DialogFooter>
