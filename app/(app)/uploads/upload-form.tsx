@@ -40,6 +40,7 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { Progress, ProgressLabel, ProgressValue } from "@/components/ui/progress"
+import { Loader } from "@/components/ui/loader"
 
 import type { BatchRow } from "./batch-history-table"
 
@@ -68,6 +69,13 @@ type ImportProgress = {
   failedRowCount: number
 }
 
+function formatEta(seconds: number): string {
+  if (seconds < 60) return `${seconds}s`
+  const minutes = Math.floor(seconds / 60)
+  const remainingSeconds = seconds % 60
+  return `${minutes}m ${remainingSeconds}s`
+}
+
 export function UploadForm({ batches }: { batches: BatchRow[] }) {
   const router = useRouter()
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -79,6 +87,8 @@ export function UploadForm({ batches }: { batches: BatchRow[] }) {
   const [skippedRowCount, setSkippedRowCount] = useState<number>(0)
   const [progress, setProgress] = useState<ImportProgress | null>(null)
   const [uploadPercent, setUploadPercent] = useState<number | null>(null)
+  const [etaSeconds, setEtaSeconds] = useState<number | null>(null)
+  const importStartRef = useRef<number | null>(null)
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -86,6 +96,8 @@ export function UploadForm({ batches }: { batches: BatchRow[] }) {
     setRowCount(null)
     setProgress(null)
     setUploadPercent(null)
+    setEtaSeconds(null)
+    importStartRef.current = null
 
     const file = fileInputRef.current?.files?.[0]
     if (!file) {
@@ -152,6 +164,7 @@ export function UploadForm({ batches }: { batches: BatchRow[] }) {
           const evt: UploadEvent = JSON.parse(line)
 
           if (evt.type === "total") {
+            importStartRef.current = Date.now()
             setProgress({ totalRowCount: evt.totalRowCount, processedRowCount: 0, failedRowCount: 0 })
           } else if (evt.type === "progress") {
             setProgress({
@@ -159,10 +172,17 @@ export function UploadForm({ batches }: { batches: BatchRow[] }) {
               processedRowCount: evt.processedRowCount,
               failedRowCount: evt.failedRowCount,
             })
+            if (importStartRef.current && evt.processedRowCount > 0) {
+              const elapsedSeconds = (Date.now() - importStartRef.current) / 1000
+              const rowsPerSecond = evt.processedRowCount / elapsedSeconds
+              const remainingRows = evt.totalRowCount - evt.processedRowCount
+              setEtaSeconds(rowsPerSecond > 0 ? Math.round(remainingRows / rowsPerSecond) : null)
+            }
           } else if (evt.type === "done") {
             finished = true
             setRowCount(evt.rowCount)
             setSkippedRowCount(evt.skippedRowCount)
+            setEtaSeconds(null)
             setProgress({
               totalRowCount: evt.rowCount + evt.skippedRowCount,
               processedRowCount: evt.rowCount + evt.skippedRowCount,
@@ -259,6 +279,17 @@ export function UploadForm({ batches }: { batches: BatchRow[] }) {
               </div>
             )}
 
+            {uploading && !progress && (uploadPercent === null || uploadPercent >= 100) && (
+              <div className="flex items-center gap-3 rounded-md border border-input bg-input/10 p-3">
+                <Loader size="sm" />
+                <p className="text-xs text-muted-foreground">
+                  {uploadPercent === null
+                    ? "Preparing upload..."
+                    : "File uploaded. Reading rows and preparing the import — large reports can take a minute here..."}
+                </p>
+              </div>
+            )}
+
             {progress && uploading && (
               <div className="flex flex-col gap-2 rounded-md border border-input bg-input/10 p-3">
                 <Progress
@@ -284,6 +315,9 @@ export function UploadForm({ batches }: { batches: BatchRow[] }) {
                       {" "}
                       &middot; {progress.failedRowCount.toLocaleString()} failed
                     </span>
+                  )}
+                  {etaSeconds !== null && etaSeconds > 0 && (
+                    <> &middot; ~{formatEta(etaSeconds)} remaining</>
                   )}
                 </p>
               </div>
