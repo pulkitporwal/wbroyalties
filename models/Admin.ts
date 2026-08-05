@@ -27,8 +27,8 @@ const AdminSchema = new Schema(
       unique: true,
       sparse: true,
     },
-    ottCommissionPercent: { type: Number, default: 25, min: 0, max: 100 },
-    ytCommissionPercent: { type: Number, default: 25, min: 0, max: 100 },
+    ottCommissionPercent: { type: Number, default: 75, min: 0, max: 100 },
+    ytCommissionPercent: { type: Number, default: 75, min: 0, max: 100 },
     mustChangePassword: { type: Boolean, default: false },
   },
   { timestamps: true }
