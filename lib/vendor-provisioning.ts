@@ -4,7 +4,7 @@ import bcrypt from "bcryptjs"
 import { Admin } from "@/models/Admin"
 
 const VENDOR_EMAIL_DOMAIN = "vendor.wbroyalties.local"
-const DEFAULT_COMMISSION_PERCENT = 25
+const DEFAULT_COMMISSION_PERCENT = 75
 
 export function slugify(value: string): string {
   return (
