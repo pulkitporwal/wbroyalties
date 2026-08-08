@@ -77,7 +77,7 @@ export default async function DashboardPage() {
 
       <div className="grid gap-4 lg:grid-cols-3">
         <div className="lg:col-span-2">
-          <RevenueTrendChart data={analytics.monthlyTrend} />
+          <RevenueTrendChart data={analytics.monthlyTrend} showGrossRevenue={!isVendor} />
         </div>
 
         <Card>
