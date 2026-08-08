@@ -21,12 +21,22 @@ import {
 import type { MonthlyPoint } from "@/lib/royalty-analytics"
 import { formatCurrencyCompact } from "@/lib/format"
 
-export function RevenueTrendChart({ data }: { data: MonthlyPoint[] }) {
+export function RevenueTrendChart({
+  data,
+  showGrossRevenue = true,
+}: {
+  data: MonthlyPoint[]
+  showGrossRevenue?: boolean
+}) {
   return (
     <Card>
       <CardHeader>
         <CardTitle>Month-over-month trend</CardTitle>
-        <CardDescription>Gross revenue and vendor payout by transaction month.</CardDescription>
+        <CardDescription>
+          {showGrossRevenue
+            ? "Gross revenue and vendor payout by transaction month."
+            : "Your payout by transaction month."}
+        </CardDescription>
       </CardHeader>
       <CardContent>
         {data.length === 0 ? (
@@ -69,15 +79,17 @@ export function RevenueTrendChart({ data }: { data: MonthlyPoint[] }) {
                 iconSize={8}
                 wrapperStyle={{ fontSize: 12, color: "var(--muted-foreground)" }}
               />
-              <Line
-                type="monotone"
-                dataKey="grossRevenue"
-                name="Gross revenue"
-                stroke="var(--chart-1)"
-                strokeWidth={2}
-                dot={false}
-                activeDot={{ r: 4 }}
-              />
+              {showGrossRevenue && (
+                <Line
+                  type="monotone"
+                  dataKey="grossRevenue"
+                  name="Gross revenue"
+                  stroke="var(--chart-1)"
+                  strokeWidth={2}
+                  dot={false}
+                  activeDot={{ r: 4 }}
+                />
+              )}
               <Line
                 type="monotone"
                 dataKey="payout"

@@ -38,17 +38,38 @@ export function buildRoyaltyMatch(filters: ReportFilters) {
   return match
 }
 
-export async function buildDetailWorkbook(filters: ReportFilters) {
+export type VendorCommission = { ytCommissionPercent: number; ottCommissionPercent: number }
+
+/**
+ * `vendorCommission` is only passed for the vendor-facing report: vendors must never see
+ * raw gross revenue, only their own commission-adjusted payout, so the "Gross Revenue"
+ * column is replaced with that computed amount when present.
+ */
+export async function buildDetailWorkbook(
+  filters: ReportFilters,
+  vendorCommission?: VendorCommission
+) {
   const match = buildRoyaltyMatch(filters)
   const columns = Object.entries(EXPECTED_HEADERS) as [string, string][]
 
   const workbook = new ExcelJS.Workbook()
   const sheet = workbook.addWorksheet("Royalty Detail")
-  sheet.columns = columns.map(([key, header]) => ({ header, key }))
+  sheet.columns = columns.map(([key, header]) => ({
+    header: vendorCommission && key === "grossRevenue" ? "Revenue" : header,
+    key,
+  }))
 
   const cursor = RoyaltyRecord.find(match).lean().cursor()
   for await (const record of cursor) {
-    sheet.addRow(record)
+    if (vendorCommission) {
+      const commissionPercent =
+        record.dspBreak === "Youtube"
+          ? vendorCommission.ytCommissionPercent
+          : vendorCommission.ottCommissionPercent
+      sheet.addRow({ ...record, grossRevenue: record.grossRevenue * (commissionPercent / 100) })
+    } else {
+      sheet.addRow(record)
+    }
   }
 
   return workbook
@@ -128,7 +149,11 @@ export async function getSummaryRows(filters: ReportFilters): Promise<SummaryRow
   }))
 }
 
-export async function buildSummaryWorkbook(filters: ReportFilters) {
+/**
+ * `hideGrossRevenue` drops the raw Gross Revenue column for the vendor-facing report —
+ * vendors only see their commission-adjusted payout, not the underlying gross figure.
+ */
+export async function buildSummaryWorkbook(filters: ReportFilters, hideGrossRevenue = false) {
   const rows = await getSummaryRows(filters)
 
   const workbook = new ExcelJS.Workbook()
@@ -136,7 +161,7 @@ export async function buildSummaryWorkbook(filters: ReportFilters) {
   sheet.columns = [
     { header: "Vendor", key: "vendorName", width: 28 },
     { header: "Month", key: "monthLabel", width: 14 },
-    { header: "Gross Revenue", key: "grossRevenue", width: 16 },
+    ...(hideGrossRevenue ? [] : [{ header: "Gross Revenue", key: "grossRevenue", width: 16 }]),
     { header: "Payout", key: "payout", width: 16 },
     { header: "Units", key: "units", width: 12 },
   ]

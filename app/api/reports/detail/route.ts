@@ -2,6 +2,7 @@ import { NextResponse } from "next/server"
 
 import { auth } from "@/lib/auth"
 import { connectToDatabase } from "@/lib/mongodb"
+import { Admin } from "@/models/Admin"
 import { buildDetailWorkbook, type ReportFilters } from "@/lib/reports"
 
 export const runtime = "nodejs"
@@ -34,7 +35,19 @@ export async function GET(request: Request) {
   }
 
   await connectToDatabase()
-  const workbook = await buildDetailWorkbook(filters)
+
+  let vendorCommission: { ytCommissionPercent: number; ottCommissionPercent: number } | undefined
+  if (isVendor) {
+    const vendor = await Admin.findById(session.user.id)
+      .select({ ytCommissionPercent: 1, ottCommissionPercent: 1 })
+      .lean()
+    vendorCommission = {
+      ytCommissionPercent: vendor?.ytCommissionPercent ?? 75,
+      ottCommissionPercent: vendor?.ottCommissionPercent ?? 75,
+    }
+  }
+
+  const workbook = await buildDetailWorkbook(filters, vendorCommission)
   const buffer = await workbook.xlsx.writeBuffer()
 
   const filenamePrefix = isVendor ? "my-royalty-statement" : "royalty-detail-report"

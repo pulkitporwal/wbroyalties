@@ -56,6 +56,7 @@ export function FilterBar({
   const [label, setLabel] = useState(current.label ?? "")
   const [isrc, setIsrc] = useState(current.isrc ?? "")
   const [q, setQ] = useState(current.q ?? "")
+  const [postedPeriodCode, setPostedPeriodCode] = useState(current.postedPeriodCode ?? "")
 
   function apply(overrides: Partial<Record<string, string>> = {}) {
     const next = {
@@ -69,6 +70,7 @@ export function FilterBar({
       label,
       isrc,
       q,
+      postedPeriodCode,
       ...overrides,
     }
 
@@ -91,6 +93,7 @@ export function FilterBar({
     setLabel("")
     setIsrc("")
     setQ("")
+    setPostedPeriodCode("")
     router.push(pathname)
   }
 
@@ -272,6 +275,32 @@ export function FilterBar({
                 {options.labelOptions.map((l) => (
                   <SelectItem key={l} value={l}>
                     {l}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        )}
+
+        {options && options.postedPeriodCodeOptions.length > 0 && (
+          <div className="flex flex-col gap-1.5">
+            <span className="text-xs text-muted-foreground">Posted Period Code</span>
+            <Select
+              value={postedPeriodCode || ALL}
+              onValueChange={(value) => {
+                const next = value === ALL ? "" : (value ?? "")
+                setPostedPeriodCode(next)
+                apply({ postedPeriodCode: next })
+              }}
+            >
+              <SelectTrigger className="w-40">
+                <SelectValue placeholder="All periods" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={ALL}>All periods</SelectItem>
+                {options.postedPeriodCodeOptions.map((code) => (
+                  <SelectItem key={code} value={code}>
+                    {code}
                   </SelectItem>
                 ))}
               </SelectContent>

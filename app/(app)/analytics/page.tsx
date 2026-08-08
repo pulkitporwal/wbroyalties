@@ -58,6 +58,7 @@ export default async function AnalyticsPage({
     label: first(params.label),
     isrc: first(params.isrc),
     q: first(params.q),
+    postedPeriodCode: first(params.postedPeriodCode),
   }
 
   const [analytics, filterOptions] = await Promise.all([
@@ -96,7 +97,7 @@ export default async function AnalyticsPage({
       />
 
       {/* Anchor: revenue trend over time */}
-      <RevenueTrendChart data={analytics.monthlyTrend} />
+      <RevenueTrendChart data={analytics.monthlyTrend} showGrossRevenue={!isVendor} />
 
       {/* Where the money comes from: platform + commission category */}
       <div className="grid gap-4 lg:grid-cols-3">

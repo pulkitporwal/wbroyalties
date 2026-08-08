@@ -1,4 +1,4 @@
-import { Disc3, HandCoins, IndianRupee, Layers, TrendingUp, Users2 } from "lucide-react"
+import { Disc3, HandCoins, IndianRupee, Layers, Users2 } from "lucide-react"
 
 import {
   Card,
@@ -36,7 +36,7 @@ export function KpiCards({
         ]
       : []),
     {
-      label: "Vendor payout",
+      label: "Payout",
       value: formatCurrency(summary.totalPayout),
       icon: HandCoins,
     },
@@ -44,11 +44,6 @@ export function KpiCards({
       label: "Units sold",
       value: formatNumber(summary.totalUnits),
       icon: Layers,
-    },
-    {
-      label: "Revenue / stream",
-      value: formatCurrency(summary.revenuePerStream),
-      icon: TrendingUp,
     },
     {
       label: "Tracks in catalog",

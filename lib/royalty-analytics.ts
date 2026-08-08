@@ -14,6 +14,7 @@ export type AnalyticsFilters = {
   label?: string
   isrc?: string
   q?: string
+  postedPeriodCode?: string
 }
 
 export type MonthlyPoint = {
@@ -112,6 +113,9 @@ function buildMatchStage(filters: AnalyticsFilters) {
   }
   if (filters.isrc) {
     match.isrc = filters.isrc
+  }
+  if (filters.postedPeriodCode) {
+    match.postedPeriodCode = filters.postedPeriodCode
   }
   if (filters.dateFrom || filters.dateTo) {
     const range: Record<string, Date> = {}
@@ -459,16 +463,19 @@ export type FilterOptions = {
   countryOptions: string[]
   revenueTypeOptions: string[]
   labelOptions: string[]
+  postedPeriodCodeOptions: string[]
 }
 
 export async function getFilterOptions(): Promise<FilterOptions> {
-  const [vendors, revDspOptions, countryOptions, revenueTypeOptions, labelOptions] = await Promise.all([
-    Admin.find({ role: "vendor" }).sort({ vendorName: 1 }).select({ vendorName: 1 }).lean(),
-    RoyaltyRecord.distinct("revDsp"),
-    RoyaltyRecord.distinct("country"),
-    RoyaltyRecord.distinct("customerRevenueType"),
-    RoyaltyRecord.distinct("labelName"),
-  ])
+  const [vendors, revDspOptions, countryOptions, revenueTypeOptions, labelOptions, postedPeriodCodeOptions] =
+    await Promise.all([
+      Admin.find({ role: "vendor" }).sort({ vendorName: 1 }).select({ vendorName: 1 }).lean(),
+      RoyaltyRecord.distinct("revDsp"),
+      RoyaltyRecord.distinct("country"),
+      RoyaltyRecord.distinct("customerRevenueType"),
+      RoyaltyRecord.distinct("labelName"),
+      RoyaltyRecord.distinct("postedPeriodCode"),
+    ])
 
   return {
     vendors: vendors.map((v) => ({ id: v._id.toString(), vendorName: v.vendorName ?? v._id.toString() })),
@@ -478,5 +485,8 @@ export async function getFilterOptions(): Promise<FilterOptions> {
       .filter((v): v is string => Boolean(v))
       .sort(),
     labelOptions: (labelOptions as (string | null)[]).filter((v): v is string => Boolean(v)).sort(),
+    postedPeriodCodeOptions: (postedPeriodCodeOptions as (string | null)[])
+      .filter((v): v is string => Boolean(v))
+      .sort(),
   }
 }

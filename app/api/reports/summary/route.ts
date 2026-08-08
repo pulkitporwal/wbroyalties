@@ -34,7 +34,7 @@ export async function GET(request: Request) {
   }
 
   await connectToDatabase()
-  const workbook = await buildSummaryWorkbook(filters)
+  const workbook = await buildSummaryWorkbook(filters, isVendor)
   const buffer = await workbook.xlsx.writeBuffer()
 
   const filenamePrefix = isVendor ? "my-monthly-summary" : "vendor-summary-report"
