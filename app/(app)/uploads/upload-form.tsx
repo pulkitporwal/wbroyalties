@@ -51,8 +51,8 @@ type NewVendorCredential = {
 }
 
 type UploadEvent =
-  | { type: "total"; totalRowCount: number }
-  | { type: "progress"; processedRowCount: number; failedRowCount: number; totalRowCount: number }
+  | { type: "file"; bytesRead: number; totalBytes: number | null }
+  | { type: "progress"; processedRowCount: number; failedRowCount: number }
   | {
       type: "done"
       batchId: string
@@ -64,9 +64,10 @@ type UploadEvent =
   | { type: "error"; error: string }
 
 type ImportProgress = {
-  totalRowCount: number
   processedRowCount: number
   failedRowCount: number
+  bytesRead: number
+  totalBytes: number | null
 }
 
 function formatEta(seconds: number): string {
@@ -167,31 +168,38 @@ export function UploadForm({ batches }: { batches: BatchRow[] }) {
           if (!line.trim()) continue
           const evt: UploadEvent = JSON.parse(line)
 
-          if (evt.type === "total") {
-            importStartRef.current = Date.now()
-            setProgress({ totalRowCount: evt.totalRowCount, processedRowCount: 0, failedRowCount: 0 })
+          if (evt.type === "file") {
+            if (!importStartRef.current) importStartRef.current = Date.now()
+            setProgress((current) => ({
+              processedRowCount: current?.processedRowCount ?? 0,
+              failedRowCount: current?.failedRowCount ?? 0,
+              bytesRead: evt.bytesRead,
+              totalBytes: evt.totalBytes,
+            }))
           } else if (evt.type === "progress") {
-            setProgress({
-              totalRowCount: evt.totalRowCount,
+            if (!importStartRef.current) importStartRef.current = Date.now()
+            setProgress((current) => ({
               processedRowCount: evt.processedRowCount,
               failedRowCount: evt.failedRowCount,
-            })
+              bytesRead: current?.bytesRead ?? 0,
+              totalBytes: current?.totalBytes ?? null,
+            }))
             if (importStartRef.current && evt.processedRowCount > 0) {
               const elapsedSeconds = (Date.now() - importStartRef.current) / 1000
               const rowsPerSecond = evt.processedRowCount / elapsedSeconds
-              const remainingRows = evt.totalRowCount - evt.processedRowCount
-              setEtaSeconds(rowsPerSecond > 0 ? Math.round(remainingRows / rowsPerSecond) : null)
+              setEtaSeconds(rowsPerSecond > 0 ? Math.round(elapsedSeconds) : null)
             }
           } else if (evt.type === "done") {
             finished = true
             setRowCount(evt.rowCount)
             setSkippedRowCount(evt.skippedRowCount)
             setEtaSeconds(null)
-            setProgress({
-              totalRowCount: evt.rowCount + evt.skippedRowCount,
+            setProgress((current) => ({
               processedRowCount: evt.rowCount + evt.skippedRowCount,
               failedRowCount: evt.failedRowCount,
-            })
+              bytesRead: current?.totalBytes ?? current?.bytesRead ?? 0,
+              totalBytes: current?.totalBytes ?? null,
+            }))
             if (evt.newVendors.length > 0) {
               setNewVendors(evt.newVendors)
             }
@@ -228,8 +236,9 @@ export function UploadForm({ batches }: { batches: BatchRow[] }) {
         <CardHeader>
           <CardTitle>Import a royalty report</CardTitle>
           <CardDescription>
-            Upload an .xlsx export. Large files (100,000+ rows) are supported —
-            processing may take a minute.
+            Upload an .xlsx export. Large files (hundreds of MB) are streamed
+            and imported in batches so the server never loads the whole sheet
+            into memory.
           </CardDescription>
         </CardHeader>
         <form onSubmit={handleSubmit}>
@@ -289,7 +298,7 @@ export function UploadForm({ batches }: { batches: BatchRow[] }) {
                 <p className="text-xs text-muted-foreground">
                   {uploadPercent === null
                     ? "Preparing upload..."
-                    : "File uploaded. Reading rows and preparing the import — large reports can take a minute here..."}
+                    : "File uploaded. Streaming the spreadsheet and importing in batches..."}
                 </p>
               </div>
             )}
@@ -298,12 +307,11 @@ export function UploadForm({ batches }: { batches: BatchRow[] }) {
               <div className="flex flex-col gap-2 rounded-md border border-input bg-input/10 p-3">
                 <Progress
                   value={
-                    progress.totalRowCount > 0
-                      ? Math.min(
-                          100,
-                          Math.round((progress.processedRowCount / progress.totalRowCount) * 100)
-                        )
-                      : 0
+                    progress.totalBytes && progress.totalBytes > 0
+                      ? Math.min(100, Math.round((progress.bytesRead / progress.totalBytes) * 100))
+                      : progress.processedRowCount > 0
+                        ? undefined
+                        : 0
                   }
                 >
                   <div className="flex items-center justify-between">
@@ -312,8 +320,7 @@ export function UploadForm({ batches }: { batches: BatchRow[] }) {
                   </div>
                 </Progress>
                 <p className="text-xs text-muted-foreground">
-                  {progress.processedRowCount.toLocaleString()} of{" "}
-                  {progress.totalRowCount.toLocaleString()} rows processed
+                  {progress.processedRowCount.toLocaleString()} rows processed
                   {progress.failedRowCount > 0 && (
                     <span className="text-destructive">
                       {" "}
@@ -321,7 +328,7 @@ export function UploadForm({ batches }: { batches: BatchRow[] }) {
                     </span>
                   )}
                   {etaSeconds !== null && etaSeconds > 0 && (
-                    <> &middot; ~{formatEta(etaSeconds)} remaining</>
+                    <> &middot; {formatEta(etaSeconds)} elapsed</>
                   )}
                 </p>
               </div>

@@ -30,7 +30,7 @@ export async function POST(request: Request) {
             "application/zip",
           ],
           addRandomSuffix: true,
-          maximumSizeInBytes: 100 * 1024 * 1024,
+          maximumSizeInBytes: 512 * 1024 * 1024,
         }
       },
       onUploadCompleted: async () => {},

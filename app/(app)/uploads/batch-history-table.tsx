@@ -188,17 +188,18 @@ export function BatchHistoryTable({ batches }: { batches: BatchRow[] }) {
                                 100,
                                 Math.round((batch.processedRowCount / batch.totalRowCount) * 100)
                               )
-                            : 0
+                            : undefined
                         }
                       >
                         <ProgressValue className="text-[11px]" />
                       </Progress>
-                      {batch.totalRowCount > 0 && (
-                        <p className="mt-0.5 text-[11px] text-muted-foreground">
-                          {batch.processedRowCount.toLocaleString()} /{" "}
-                          {batch.totalRowCount.toLocaleString()} rows
-                        </p>
-                      )}
+                      <p className="mt-0.5 text-[11px] text-muted-foreground">
+                        {batch.processedRowCount.toLocaleString()}
+                        {batch.totalRowCount > 0
+                          ? ` / ${batch.totalRowCount.toLocaleString()}`
+                          : ""}{" "}
+                        rows
+                      </p>
                     </div>
                   )}
                   {batch.status === "failed" && batch.errorMessage && (

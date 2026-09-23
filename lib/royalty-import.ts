@@ -1,5 +1,6 @@
 import ExcelJS from "exceljs"
-import { Readable } from "node:stream"
+import { Readable, Transform } from "node:stream"
+import type { ReadableStream as NodeWebReadableStream } from "node:stream/web"
 
 export const EXPECTED_HEADERS = {
   catalogNumber: "Catalog Number",
@@ -53,6 +54,11 @@ export type ParsedRoyaltyRow = {
   summaryMonthKey: string | null
   summaryMonthLabel: string | null
 }
+
+/** Target in-memory size of each parsed-row flush to MongoDB. */
+export const IMPORT_BATCH_TARGET_BYTES = 25 * 1024 * 1024
+/** Hard cap so a single insertMany stays within MongoDB bulk limits. */
+export const IMPORT_BATCH_MAX_ROWS = 12_000
 
 /** Parses "202606 (MAR)" into a sortable "2026-06" key and a "MAR 2026" label. */
 function parseSummaryMonth(raw: string | null): { key: string; label: string } | null {
@@ -135,11 +141,11 @@ function cellDate(value: ExcelJS.CellValue): Date | null {
   return null
 }
 
-function createReader(buffer: Buffer) {
+function createReader(stream: Readable) {
   // styles must be "cache" (not "ignore") so ExcelJS can resolve date-formatted
   // numeric cells (like Transaction Date) into JS Date objects instead of raw
   // serial numbers.
-  return new ExcelJS.stream.xlsx.WorkbookReader(Readable.from(buffer), {
+  return new ExcelJS.stream.xlsx.WorkbookReader(stream, {
     sharedStrings: "cache",
     styles: "cache",
     hyperlinks: "ignore",
@@ -185,57 +191,117 @@ function toRow(headerMap: HeaderMap, values: ExcelJS.CellValue[]): ParsedRoyalty
   }
 }
 
-export type VendorScanResult = { vendorNames: Set<string>; totalRowCount: number }
-
-/** Pass 1: cheap scan collecting the distinct set of vendor names in the file, and a total row count for progress reporting. */
-export async function collectVendorNames(buffer: Buffer): Promise<VendorScanResult> {
-  const reader = createReader(buffer)
-  let headerMap: HeaderMap | null = null
-  const vendorNames = new Set<string>()
-  let totalRowCount = 0
-
-  // Only the first worksheet is treated as data; extra sheets (notes, pivots,
-  // summaries) are common in real exports and shouldn't be required to match
-  // the expected columns.
-  for await (const worksheetReader of reader) {
-    for await (const row of worksheetReader) {
-      const values = row.values as ExcelJS.CellValue[]
-      if (row.number === 1) {
-        headerMap = buildHeaderMap(values)
-        continue
-      }
-      if (!headerMap) continue
-      totalRowCount += 1
-      const vendorName = cellText(values[headerMap.vendorName])
-      if (vendorName) vendorNames.add(vendorName)
-    }
-    break
+/** Rough BSON/JS-object size so batches flush around IMPORT_BATCH_TARGET_BYTES. */
+export function estimateRowBytes(row: ParsedRoyaltyRow): number {
+  let bytes = 256
+  for (const value of Object.values(row)) {
+    if (typeof value === "string") bytes += value.length * 2 + 24
+    else if (value instanceof Date) bytes += 32
+    else if (typeof value === "number") bytes += 16
+    else bytes += 8
   }
-
-  if (!headerMap) {
-    throw new Error("The uploaded file has no header row.")
-  }
-
-  return { vendorNames, totalRowCount }
+  return bytes
 }
 
 export type StreamResult = { rowCount: number; skippedRowCount: number }
 export type StreamProgress = { processedRowCount: number; skippedRowCount: number }
 
-/** Pass 2: re-streams every row, invoking onBatch with chunks of parsed rows. */
-export async function streamRoyaltyRows(
-  buffer: Buffer,
+export type StreamRoyaltyOptions = {
+  targetBatchBytes?: number
+  maxBatchRows?: number
+  onProgress?: (progress: StreamProgress) => void
+  onFileBytes?: (bytesRead: number, totalBytes: number | null) => void
+}
+
+function swallowStreamError(error: unknown) {
+  const name = error instanceof Error ? error.name : ""
+  if (name === "AbortError" || name === "ERR_STREAM_PREMATURE_CLOSE") return
+}
+
+function nodeStreamFromWeb(
+  body: ReadableStream<Uint8Array>,
+  onBytes?: (bytesRead: number) => void
+): Readable {
+  const source = Readable.fromWeb(body as unknown as NodeWebReadableStream<Uint8Array>, {
+    highWaterMark: 64 * 1024,
+  })
+  source.on("error", swallowStreamError)
+
+  let bytesRead = 0
+  const counted = source.pipe(
+    new Transform({
+      highWaterMark: 64 * 1024,
+      transform(chunk, _encoding, callback) {
+        bytesRead += chunk.length
+        onBytes?.(bytesRead)
+        callback(null, chunk)
+      },
+    })
+  )
+  counted.on("error", swallowStreamError)
+  return counted
+}
+
+/**
+ * Streams an .xlsx from a remote URL (e.g. Vercel Blob) without buffering the
+ * whole file. .xlsx is a zip, so it cannot be split into independent 25MB file
+ * slices — instead rows are parsed incrementally and flushed in ~25MB batches.
+ */
+export async function streamRoyaltyRowsFromUrl(
+  fileUrl: string,
   onBatch: (rows: ParsedRoyaltyRow[]) => Promise<void>,
-  onProgress?: (progress: StreamProgress) => void,
-  batchSize = 1000
+  options: StreamRoyaltyOptions = {}
 ): Promise<StreamResult> {
-  const reader = createReader(buffer)
+  const abort = new AbortController()
+  const response = await fetch(fileUrl, { signal: abort.signal, cache: "no-store" })
+  if (!response.ok || !response.body) {
+    abort.abort()
+    throw new Error("Couldn't download the uploaded file.")
+  }
+
+  const totalBytesHeader = response.headers.get("content-length")
+  const totalBytes = totalBytesHeader ? Number(totalBytesHeader) : null
+  const totalBytesOrNull = Number.isFinite(totalBytes) && (totalBytes as number) > 0 ? totalBytes : null
+
+  const stream = nodeStreamFromWeb(response.body, (bytesRead) => {
+    options.onFileBytes?.(bytesRead, totalBytesOrNull)
+  })
+
+  try {
+    return await streamRoyaltyRows(stream, onBatch, options)
+  } finally {
+    abort.abort()
+    stream.destroy()
+  }
+}
+
+/** Pass: streams every row, invoking onBatch with memory-bounded chunks of parsed rows. */
+export async function streamRoyaltyRows(
+  stream: Readable,
+  onBatch: (rows: ParsedRoyaltyRow[]) => Promise<void>,
+  options: StreamRoyaltyOptions = {}
+): Promise<StreamResult> {
+  const targetBatchBytes = options.targetBatchBytes ?? IMPORT_BATCH_TARGET_BYTES
+  const maxBatchRows = options.maxBatchRows ?? IMPORT_BATCH_MAX_ROWS
+  const reader = createReader(stream)
   let headerMap: HeaderMap | null = null
   let batch: ParsedRoyaltyRow[] = []
+  let batchBytes = 0
   let total = 0
   let skipped = 0
 
-  // Only the first worksheet is treated as data; see note in collectVendorNames.
+  async function flush() {
+    if (batch.length === 0) return
+    const toWrite = batch
+    batch = []
+    batchBytes = 0
+    await onBatch(toWrite)
+    options.onProgress?.({ processedRowCount: total, skippedRowCount: skipped })
+  }
+
+  // Only the first worksheet is treated as data; extra sheets (notes, pivots,
+  // summaries) are common in real exports and shouldn't be required to match
+  // the expected columns.
   for await (const worksheetReader of reader) {
     for await (const row of worksheetReader) {
       const values = row.values as ExcelJS.CellValue[]
@@ -253,11 +319,10 @@ export async function streamRoyaltyRows(
 
       batch.push(parsed)
       total += 1
+      batchBytes += estimateRowBytes(parsed)
 
-      if (batch.length >= batchSize) {
-        await onBatch(batch)
-        batch = []
-        onProgress?.({ processedRowCount: total, skippedRowCount: skipped })
+      if (batch.length >= maxBatchRows || batchBytes >= targetBatchBytes) {
+        await flush()
       }
     }
     break
@@ -267,10 +332,8 @@ export async function streamRoyaltyRows(
     throw new Error("The uploaded file has no header row.")
   }
 
-  if (batch.length > 0) {
-    await onBatch(batch)
-  }
-  onProgress?.({ processedRowCount: total, skippedRowCount: skipped })
+  await flush()
+  options.onProgress?.({ processedRowCount: total, skippedRowCount: skipped })
 
   return { rowCount: total, skippedRowCount: skipped }
 }

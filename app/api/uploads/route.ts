@@ -6,15 +6,18 @@ import { connectToDatabase } from "@/lib/mongodb"
 import { UploadBatch } from "@/models/UploadBatch"
 import { RoyaltyRecord } from "@/models/RoyaltyRecord"
 import { IsrcClaim } from "@/models/IsrcClaim"
-import { collectVendorNames, streamRoyaltyRows, type ParsedRoyaltyRow } from "@/lib/royalty-import"
-import { ensureVendorAccounts } from "@/lib/vendor-provisioning"
+import {
+  streamRoyaltyRowsFromUrl,
+  type ParsedRoyaltyRow,
+} from "@/lib/royalty-import"
+import { ensureVendorAccounts, type NewVendorCredential } from "@/lib/vendor-provisioning"
 
 export const runtime = "nodejs"
 export const maxDuration = 300
 
 type UploadEvent =
-  | { type: "total"; totalRowCount: number }
-  | { type: "progress"; processedRowCount: number; failedRowCount: number; totalRowCount: number }
+  | { type: "file"; bytesRead: number; totalBytes: number | null }
+  | { type: "progress"; processedRowCount: number; failedRowCount: number }
   | {
       type: "done"
       batchId: string
@@ -24,6 +27,8 @@ type UploadEvent =
       newVendors: { vendorName: string; email: string; tempPassword: string }[]
     }
   | { type: "error"; error: string }
+
+const ISRC_CLAIM_FLUSH_SIZE = 1_000
 
 export async function POST(request: Request) {
   const encoder = new TextEncoder()
@@ -83,19 +88,6 @@ export async function POST(request: Request) {
 
         blobUrlToDelete = blobUrl
 
-        const blobResponse = await fetch(blobUrl)
-        if (!blobResponse.ok) {
-          send({ type: "error", error: "Couldn't download the uploaded file." })
-          return
-        }
-        const buffer = Buffer.from(await blobResponse.arrayBuffer())
-
-        const { vendorNames, totalRowCount } = await collectVendorNames(buffer)
-        send({ type: "total", totalRowCount })
-        await UploadBatch.findByIdAndUpdate(batch._id, { totalRowCount })
-
-        const { vendorIdByName, newVendors } = await ensureVendorAccounts(vendorNames)
-
         if (typeof replaceBatchId === "string" && replaceBatchId.length > 0) {
           await RoyaltyRecord.deleteMany({ batchId: replaceBatchId })
         }
@@ -103,15 +95,72 @@ export async function POST(request: Request) {
         // Rows that fail to insert (e.g. a schema cast error on one bad row)
         // shouldn't abort the whole import — count and skip them instead.
         let insertFailedCount = 0
+        const vendorIdByName = new Map<string, string>()
+        const newVendors: NewVendorCredential[] = []
 
         // The report itself is proof a vendor owns the ISRCs it lists, so each
         // (vendor, ISRC) pair seen in the file is auto-registered as an
-        // approved claim — no separate manual claim/review needed.
+        // approved claim — flushed in chunks so unique ISRCs don't pile up.
         const isrcClaimCandidates = new Map<string, ParsedRoyaltyRow>()
 
-        const { rowCount, skippedRowCount } = await streamRoyaltyRows(
-          buffer,
+        async function flushIsrcClaims(force = false) {
+          if (!force && isrcClaimCandidates.size < ISRC_CLAIM_FLUSH_SIZE) return
+          if (isrcClaimCandidates.size === 0) return
+
+          const pending = Array.from(isrcClaimCandidates.values())
+          isrcClaimCandidates.clear()
+
+          const isrcClaimOps = pending.flatMap((row) => {
+            const vendorId = vendorIdByName.get(row.vendorName)
+            if (!row.isrc || !vendorId) return []
+            return [
+              {
+                updateOne: {
+                  filter: { isrc: row.isrc, status: "approved" as const },
+                  update: {
+                    $setOnInsert: {
+                      isrc: row.isrc,
+                      vendorId: new mongoose.Types.ObjectId(vendorId),
+                      vendorName: row.vendorName,
+                      productTitle: row.productTitle ?? "Unknown title",
+                      productArtistName: row.productArtistName ?? "Unknown artist",
+                      productAlbumName: row.productAlbumName ?? undefined,
+                      labelName: row.labelName ?? undefined,
+                      status: "approved" as const,
+                      reviewedByName: "Auto-approved (report upload)",
+                      reviewedAt: new Date(),
+                    },
+                  },
+                  upsert: true,
+                },
+              },
+            ]
+          })
+
+          if (isrcClaimOps.length === 0) return
+          try {
+            await IsrcClaim.bulkWrite(isrcClaimOps, { ordered: false })
+          } catch (error) {
+            console.error("[uploads] failed to auto-register some ISRC claims:", error)
+          }
+        }
+
+        let lastFileEventAt = 0
+        const { rowCount, skippedRowCount } = await streamRoyaltyRowsFromUrl(
+          blobUrl,
           async (rows) => {
+            const unknownVendors = new Set<string>()
+            for (const row of rows) {
+              if (!vendorIdByName.has(row.vendorName)) unknownVendors.add(row.vendorName)
+            }
+            if (unknownVendors.size > 0) {
+              const ensured = await ensureVendorAccounts(unknownVendors)
+              for (const [name, id] of ensured.vendorIdByName) {
+                vendorIdByName.set(name, id)
+              }
+              newVendors.push(...ensured.newVendors)
+            }
+
             const docs = rows.map((row) => ({
               ...row,
               batchId: batch._id,
@@ -131,69 +180,48 @@ export async function POST(request: Request) {
                 isrcClaimCandidates.set(row.isrc, row)
               }
             }
+            await flushIsrcClaims()
           },
-          ({ processedRowCount, skippedRowCount }) => {
-            send({
-              type: "progress",
-              processedRowCount,
-              failedRowCount: skippedRowCount + insertFailedCount,
-              totalRowCount,
-            })
-            UploadBatch.findByIdAndUpdate(batch._id, { processedRowCount }).catch((updateError) => {
-              console.error("[uploads] failed to persist progress:", updateError)
-            })
+          {
+            onFileBytes: (bytesRead, totalBytes) => {
+              const now = Date.now()
+              const isComplete = totalBytes !== null && bytesRead >= totalBytes
+              if (!isComplete && now - lastFileEventAt < 400) return
+              lastFileEventAt = now
+              send({ type: "file", bytesRead, totalBytes })
+            },
+            onProgress: ({ processedRowCount, skippedRowCount }) => {
+              send({
+                type: "progress",
+                processedRowCount,
+                failedRowCount: skippedRowCount + insertFailedCount,
+              })
+              UploadBatch.findByIdAndUpdate(batch._id, { processedRowCount }).catch((updateError) => {
+                console.error("[uploads] failed to persist progress:", updateError)
+              })
+            },
           }
         )
 
+        await flushIsrcClaims(true)
+
         const failedRowCount = skippedRowCount + insertFailedCount
-
-        const isrcClaimOps = Array.from(isrcClaimCandidates.values()).flatMap((row) => {
-          const vendorId = vendorIdByName.get(row.vendorName)
-          if (!row.isrc || !vendorId) return []
-          return [
-            {
-              updateOne: {
-                filter: { isrc: row.isrc, status: "approved" as const },
-                update: {
-                  $setOnInsert: {
-                    isrc: row.isrc,
-                    vendorId: new mongoose.Types.ObjectId(vendorId),
-                    vendorName: row.vendorName,
-                    productTitle: row.productTitle ?? "Unknown title",
-                    productArtistName: row.productArtistName ?? "Unknown artist",
-                    productAlbumName: row.productAlbumName ?? undefined,
-                    labelName: row.labelName ?? undefined,
-                    status: "approved" as const,
-                    reviewedByName: "Auto-approved (report upload)",
-                    reviewedAt: new Date(),
-                  },
-                },
-                upsert: true,
-              },
-            },
-          ]
-        })
-
-        if (isrcClaimOps.length > 0) {
-          try {
-            await IsrcClaim.bulkWrite(isrcClaimOps, { ordered: false })
-          } catch (error) {
-            console.error("[uploads] failed to auto-register some ISRC claims:", error)
-          }
-        }
+        const importedRowCount = rowCount - insertFailedCount
+        const scannedRowCount = rowCount + skippedRowCount
 
         await UploadBatch.findByIdAndUpdate(batch._id, {
           status: "completed",
-          rowCount: rowCount - insertFailedCount,
+          rowCount: importedRowCount,
           skippedRowCount: failedRowCount,
           vendorsCreated: newVendors.length,
-          processedRowCount: totalRowCount,
+          processedRowCount: scannedRowCount,
+          totalRowCount: scannedRowCount,
         })
 
         send({
           type: "done",
           batchId: batch._id.toString(),
-          rowCount: rowCount - insertFailedCount,
+          rowCount: importedRowCount,
           skippedRowCount: failedRowCount,
           failedRowCount,
           newVendors,
