@@ -188,7 +188,7 @@ export function BatchHistoryTable({ batches }: { batches: BatchRow[] }) {
                                 100,
                                 Math.round((batch.processedRowCount / batch.totalRowCount) * 100)
                               )
-                            : undefined
+                            : null
                         }
                       >
                         <ProgressValue className="text-[11px]" />

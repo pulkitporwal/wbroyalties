@@ -310,7 +310,7 @@ export function UploadForm({ batches }: { batches: BatchRow[] }) {
                     progress.totalBytes && progress.totalBytes > 0
                       ? Math.min(100, Math.round((progress.bytesRead / progress.totalBytes) * 100))
                       : progress.processedRowCount > 0
-                        ? undefined
+                        ? null
                         : 0
                   }
                 >
